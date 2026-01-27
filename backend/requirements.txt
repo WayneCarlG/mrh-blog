@@ -4,3 +4,4 @@ flask-cors
 flask-pymongo
 flask-bcrypt
 flask-jwt
+pymongo[srv]==3.12
