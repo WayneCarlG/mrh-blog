@@ -1,1 +1,6 @@
 venv
+variables.sh
+.env
+__pycache__/
+*.pyc
+2.8.0
