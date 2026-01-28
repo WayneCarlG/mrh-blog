@@ -1,3 +1,4 @@
+import { Bird } from "lucide-react";
 import { Link } from "react-router-dom";
 
 export default function HomePage() {
@@ -8,7 +9,8 @@ export default function HomePage() {
       <section className="bg-[#0a1a2f] text-white">
         <div className="max-w-7xl mx-auto px-6 py-20 text-center">
           <h1 className="text-4xl md:text-6xl font-bold mb-4">
-            Welcome to <span className="text-cyan-400">Endtime Uncensored</span>
+            <Bird />
+            <span className="text-cyan-400">Religion Uncensored</span>
           </h1>
           <p className="text-lg md:text-xl text-gray-200 mb-8">
             Unequalled insights on faith, life, and the journey ahead.
