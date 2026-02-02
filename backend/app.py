@@ -9,6 +9,7 @@ from flask_jwt_extended import (
 )
 from datetime import datetime
 from bson import ObjectId
+import base64
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
@@ -17,12 +18,17 @@ app = Flask(__name__)
 #JWT CONFIGURATION
 app.config["JWT_SECRET_KEY"] = "super-secret-key"
 app.config["JWT_TOKEN_LOCATION"] = ["headers"]
+app.config["JWT_HEADER_NAME"] = "Authorization"
+app.config["JWT_HEADER_TYPE"] = "Bearer"
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = False
 
-#CORS SETUP
-CORS(app, supports_credentials=True)
 jwt=JWTManager(app)
 
+#CORS SETUP
+CORS(app,
+    resources={r"/api/*": {"origins": "http://localhost:3000"}},
+    supports_credentials=False
+)
 
 #Routes
 @app.route('/', methods=['GET'])
@@ -95,18 +101,14 @@ def login():
 @app.route("/api/create-post", methods=["POST"])
 @jwt_required()
 def create_post():
-    try:
-        data = request.get_json()
-    except Exception as e:
-        print(f"Error parsing JSON: {e}")
-        return jsonify({"error": "Invalid JSON in request body"}), 400
-    
+    data = request.get_json(silent=True)
+
+    if not data:
+        return jsonify({"error": "Request body must be valid JSON"}), 400
+
     user = get_jwt_identity()
 
-    # `get_jwt_identity()` may return a string (email) from older tokens
-    # or a dict (id/name/email) from newer tokens. Normalize to a dict.
     if isinstance(user, str):
-        # treat as email and look up user in DB
         user_record = Config.DB.users.find_one({"email": user})
         if not user_record:
             return jsonify({"error": "User not found"}), 401
@@ -115,10 +117,14 @@ def create_post():
             "name": user_record.get("username") or user_record.get("name"),
             "email": user_record.get("email")
         }
+    
+    if not isinstance(user, dict):
+        return jsonify({"error": "Invalid user identity"}), 401
 
     title = data.get("title")
     content = data.get("content")
-    category = data.get("category", "")
+    category = data.get("category")
+    cover_image = data.get("coverImage")
 
     if not title or not title.strip():
         return jsonify({"error": "Title is required"}), 400
@@ -129,25 +135,38 @@ def create_post():
     if not category or not category.strip():
         return jsonify({"error": "Category is required"}), 400
 
-    # Validate coverImage size (max 5MB)
-    cover_image = data.get("coverImage")
-    if cover_image and len(cover_image) > 5 * 1024 * 1024:
-        return jsonify({"error": "Image file is too large. Max size is 5MB"}), 400
+    # if cover_image and isinstance(cover_image, str):
+    #     image_bytes = base64.b64decode(
+    #         cover_image.split(",")[1] if "," in cover_image else cover_image
+    #     )
+    #     if len(image_bytes) > 5 * 1024 * 1024:
+    #         return jsonify({"error": "Image file is too large. Max size is 5MB"}), 400
+    
+    if cover_image:
+        try:
+            if "," in cover_image:
+                cover_image = cover_image.split(",")[1]
+            image_bytes = base64.b64decode(cover_image)
+            if len(image_bytes) > 5 * 1024 * 1024:
+                return jsonify({"error": "Image too large (max 5MB)"}), 400
+        except Exception:
+            return jsonify({"error": "Invalid image format"}), 400
 
     post_data = {
+        
         "title": title.strip(),
         "category": category.strip(),
         "status": data.get("status", "draft"),
         "content": content.strip(),
-        "coverImage": cover_image,  # base64 image
+        "coverImage": cover_image,
         "author": {
-            "id": str(user.get("id")) if user.get("id") is not None else None,
+            "id": user.get("id"),
             "name": user.get("name"),
             "email": user.get("email")
         },
         "createdAt": datetime.utcnow(),
         "updatedAt": datetime.utcnow()
-    }
+        }
 
     try:
         result = Config.DB.posts.insert_one(post_data)
@@ -155,16 +174,11 @@ def create_post():
             "message": "Post created successfully",
             "postId": str(result.inserted_id)
         }), 201
-
     except Exception as e:
-        print(f"Error creating post: {e}")
-        print(f"Error type: {type(e).__name__}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": "Failed to create post", "details": str(e)}), 500
+        print("Error creating post:", e)
+        return jsonify({"error": "Failed to create post"}), 500
 
 @app.route("/api/posts", methods=["GET"])
-@jwt_required()
 def get_posts():
     try:
         posts = list(Config.DB.posts.find().sort("_id", -1))

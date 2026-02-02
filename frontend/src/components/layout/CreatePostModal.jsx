@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import api from '../../api';
+import api from "../../api";
 
 export default function CreatePostModal({ isOpen, onClose }) {
   const editorRef = useRef(null);
@@ -89,14 +89,28 @@ export default function CreatePostModal({ isOpen, onClose }) {
     editorRef.current.innerHTML = "";
 
     onClose();
-  } catch (err) {
-    console.error("Error creating post:", err);
-    const errorMessage = err.response?.data?.error || err.response?.data?.details || "Failed to create post";
-    setError(errorMessage);
+} catch (err) {
+  console.error("Full Axios error:", err);
+
+  if (err.response) {
+    // Server responded with a status
+    console.error("Response status:", err.response.status);
+    console.error("Response data:", err.response.data);
+    setError(err.response.data?.error || "Server error");
+  } else if (err.request) {
+    // Request sent but no response (CORS / network)
+    console.error("No response received:", err.request);
+    setError("Server unreachable or CORS error");
+  } else {
+    // Something else broke
+    console.error("Request setup error:", err.message);
+    setError("Unexpected error");
+  }
+
   } finally {
     setLoading(false);
   }
-  console.log("JWT", localStorage.getItem("token"));
+  console.log("JWT", localStorage.getItem("access_token"));
 }
 
   return (

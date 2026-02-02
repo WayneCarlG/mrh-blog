@@ -1,7 +1,26 @@
 import { Bird } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import api from "../../api";
 
 export default function HomePage() {
+  const [featuredPosts, setFeaturedPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchFeaturedPosts();
+  }, []);
+
+  async function fetchFeaturedPosts() {
+    try {
+      const response = await api.get("/posts?featured=true");
+      setFeaturedPosts(response.data);
+    } catch (error) {
+      console.error("Error fetching featured posts:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
   return (
     <div className="min-h-screen bg-white text-[#0a1a2f]">
       
@@ -13,7 +32,7 @@ export default function HomePage() {
             <span className="text-cyan-400">Religion Uncensored</span>
           </h1>
           <p className="text-lg md:text-xl text-gray-200 mb-8">
-            Unequalled insights on faith, life, and the journey ahead.
+            Unmasking the architecture of global beliefs, faith and cults.
           </p>
 
           <div className="flex justify-center gap-4">
@@ -32,45 +51,56 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
       {/* FEATURED POSTS */}
       <section className="max-w-7xl mx-auto px-6 py-16">
         <h2 className="text-3xl font-bold mb-8 text-center">
           Featured <span className="text-cyan-500">Posts</span>
         </h2>
 
-        <div className="grid md:grid-cols-3 gap-8">
-          {[1, 2, 3].map((post) => (
-            <div
-              key={post}
-              className="bg-white border border-gray-200 rounded-xl shadow hover:shadow-lg transition"
-            >
-              <div className="h-48 bg-cyan-100 rounded-t-xl"></div>
+        {loading ? (
+          <p className="text-center text-gray-500">Loading posts...</p>
+        ) : featuredPosts.length === 0 ? (
+          <p className="text-center text-gray-500">No featured posts yet.</p>
+        ) : (
+          <div className="grid md:grid-cols-3 gap-8">
+            {featuredPosts.map((post) => (
+              <div
+                key={post._id}
+                className="bg-white border border-gray-200 rounded-xl shadow hover:shadow-lg transition"
+              >
+                {/* Cover image */}
+                <div
+                  className="h-48 rounded-t-xl bg-cover bg-center"
+                  style={{
+                    backgroundImage: `url(${post.cover_image || "/placeholder.jpg"})`,
+                  }}
+                />
 
-              <div className="p-6">
-                <span className="inline-block text-sm font-semibold text-red-500 mb-2">
-                  Revival
-                </span>
-                <h3 className="text-xl font-bold mb-2">
-                  Sample Blog Post Title {post}
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  This is a short excerpt of the blog post to give readers a preview
-                  of what the article is about.
-                </p>
+                <div className="p-6">
+                  <span className="inline-block text-sm font-semibold text-red-500 mb-2">
+                    {post.category}
+                  </span>
 
-                <Link
-                  to={`/blogs/${post}`}
-                  className="text-cyan-600 font-semibold hover:underline"
-                >
-                  Read More →
-                </Link>
+                  <h3 className="text-xl font-bold mb-2">
+                    {post.title}
+                  </h3>
+
+                  <p className="text-gray-600 mb-4">
+                    {post.excerpt}
+                  </p>
+
+                  <Link
+                    to={`/blogs/${post._id}`}
+                    className="text-cyan-600 font-semibold hover:underline"
+                  >
+                    Read More →
+                  </Link>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
-
       {/* CATEGORIES */}
       <section className="bg-gray-50 py-14">
         <div className="max-w-7xl mx-auto px-6">
@@ -79,7 +109,7 @@ export default function HomePage() {
           </h2>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-            {["Revival", "Prophecy", "Fulfillment", "Testomonies"].map((cat) => (
+            {["Revival for Doctrine", "Prophecy for Cults", "Fulfilments on Traditions and witchcraft", "Testimonies for Faith based Healings"].map((cat) => (
               <div
                 key={cat}
                 className="bg-white border-l-4 border-cyan-400 rounded-lg p-6 text-center hover:border-yellow-400 transition cursor-pointer"
@@ -116,7 +146,7 @@ export default function HomePage() {
 
       {/* FOOTER */}
       <footer className="bg-white border-t py-6 text-center text-gray-500">
-        © {new Date().getFullYear()} Endtime Uncensored. All rights reserved.
+        © {new Date().getFullYear()} Religion Uncensored. All rights reserved.
       </footer>
     </div>
   );

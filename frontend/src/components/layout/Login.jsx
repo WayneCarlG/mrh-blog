@@ -22,9 +22,10 @@ export function Login() {
       const res = await api.post("/auth/login", form);
 
       //MATCH BACKEND RESPONSE
-      localStorage.setItem("token", res.data.access_token);
+      localStorage.setItem("access_token", res.data.access_token);
 
       navigate("/dashboard");
+      setError("");
     } catch (err) {
       setError(
         err.response?.data?.error || "Invalid email or password"
