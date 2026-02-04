@@ -1,4 +1,3 @@
-import { Bird } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import api from "../../api";
@@ -28,7 +27,7 @@ export default function HomePage() {
       <section className="bg-[#0a1a2f] text-white">
         <div className="max-w-7xl mx-auto px-6 py-20 text-center">
           <h1 className="text-4xl md:text-6xl font-bold mb-4">
-            <Bird />
+            <img src="/logo.jpg" alt="Logo" className="w-16 h-16 mx-auto mb-4" />
             <span className="text-cyan-400">Religion Uncensored</span>
           </h1>
           <p className="text-lg md:text-xl text-gray-200 mb-8">
@@ -36,12 +35,12 @@ export default function HomePage() {
           </p>
 
           <div className="flex justify-center gap-4">
-            <Link
+            {/* <Link
               to="/blogs"
               className="bg-cyan-400 hover:bg-cyan-500 text-[#0a1a2f] font-semibold px-6 py-3 rounded-lg transition"
             >
               Read Blog
-            </Link>
+            </Link> */}
             <Link
               to="/subscribe"
               className="border-2 border-yellow-400 text-yellow-400 hover:bg-yellow-400 hover:text-[#0a1a2f] font-semibold px-6 py-3 rounded-lg transition"
