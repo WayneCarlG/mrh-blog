@@ -72,7 +72,7 @@ export default function HomePage() {
                 <div
                   className="h-48 rounded-t-xl bg-cover bg-center"
                   style={{
-                    backgroundImage: `url(${post.cover_image || "/placeholder.jpg"})`,
+                    backgroundImage: `url(${post.coverImage || "/placeholder.jpg"})`,
                   }}
                 />
 
@@ -102,7 +102,7 @@ export default function HomePage() {
         )}
       </section>
       {/* CATEGORIES */}
-      <section className="bg-gray-50 py-14">
+      {/* <section className="bg-gray-50 py-14">
         <div className="max-w-7xl mx-auto px-6">
           <h2 className="text-3xl font-bold mb-8 text-center">
             Browse by <span className="text-yellow-500">Category</span>
@@ -119,7 +119,7 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* NEWSLETTER */}
       <section className="bg-[#0a1a2f] text-white py-16">

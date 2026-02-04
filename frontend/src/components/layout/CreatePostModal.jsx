@@ -1,150 +1,204 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import api from "../../api";
 
 export default function CreatePostModal({ isOpen, onClose }) {
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
+  const coverInputRef = useRef(null);
 
   const [formData, setFormData] = useState({
     title: "",
     category: "",
     status: "draft",
-    content: "",
-    coverImage: null,
+    coverImage: null, // base64 for preview + send
   });
 
+  const [coverPreview, setCoverPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    if (!isOpen) {
+      // Full reset when modal closes
+      setFormData({ title: "", category: "", status: "draft", coverImage: null });
+      setCoverPreview(null);
+      setError("");
+      if (editorRef.current) editorRef.current.innerHTML = "";
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  function handleChange(e) {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  }
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
 
-  function format(command, value = null) {
-    editorRef.current.focus();
-    document.execCommand(command, false, value);
-  }
+  const format = (command, value = null) => {
+    if (editorRef.current) {
+      editorRef.current.focus();
+      document.execCommand(command, false, value);
+    }
+  };
 
-  function handleImageUpload(e) {
+  const handleContentImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = () => {
-      editorRef.current.focus();
-      document.execCommand("insertImage", false, reader.result);
-      setFormData({ ...formData, coverImage: reader.result });
+      if (editorRef.current) {
+        editorRef.current.focus();
+        document.execCommand("insertImage", false, reader.result);
+      }
     };
     reader.readAsDataURL(file);
-  }
-
- async function handleSubmit(e) {
-  e.preventDefault();
-  setLoading(true);
-  setError("");
-
-  const content = editorRef.current.innerHTML.trim();
-
-  // Validate required fields
-  if (!formData.title.trim()) {
-    setError("Title is required");
-    setLoading(false);
-    return;
-  }
-
-  if (!formData.category) {
-    setError("Please select a category");
-    setLoading(false);
-    return;
-  }
-
-  if (!content || content === "<br>") {
-    setError("Content is required");
-    setLoading(false);
-    return;
-  }
-
-  const payload = {
-    title: formData.title,
-    category: formData.category,
-    status: formData.status,
-    content,
-    coverImage: formData.coverImage,
   };
 
-  try {
-    const response = await api.post("/create-post", payload);
-    console.log("Post created:", response.data);
+  const handleCoverImageChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-    // Reset form
-    setFormData({
-      title: "",
-      category: "",
-      status: "draft",
-      content: "",
-      coverImage: null,
-    });
-    editorRef.current.innerHTML = "";
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Cover image must be under 5MB");
+      return;
+    }
 
-    onClose();
-} catch (err) {
-  console.error("Full Axios error:", err);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCoverPreview(reader.result);
+      setFormData((prev) => ({ ...prev, coverImage: reader.result }));
+      setError("");
+    };
+    reader.readAsDataURL(file);
+  };
 
-  if (err.response) {
-    // Server responded with a status
-    console.error("Response status:", err.response.status);
-    console.error("Response data:", err.response.data);
-    setError(err.response.data?.error || "Server error");
-  } else if (err.request) {
-    // Request sent but no response (CORS / network)
-    console.error("No response received:", err.request);
-    setError("Server unreachable or CORS error");
-  } else {
-    // Something else broke
-    console.error("Request setup error:", err.message);
-    setError("Unexpected error");
-  }
+  const getEditorContent = () => {
+    return editorRef.current?.innerHTML?.trim() || "";
+  };
 
-  } finally {
-    setLoading(false);
-  }
-  console.log("JWT", localStorage.getItem("access_token"));
-}
+  const isEditorEmpty = (html) => {
+    if (!html) return true;
+    const text = html.replace(/<[^>]+>/g, "").trim();
+    return text.length === 0;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    const content = getEditorContent();
+
+    // Validation
+    if (!formData.title.trim()) {
+      setError("Title is required");
+      setLoading(false);
+      return;
+    }
+
+    if (!formData.category) {
+      setError("Please select a category");
+      setLoading(false);
+      return;
+    }
+
+    if (isEditorEmpty(content)) {
+      setError("Post content cannot be empty");
+      setLoading(false);
+      return;
+    }
+
+    const payload = {
+      title: formData.title.trim(),
+      category: formData.category,
+      status: formData.status,
+      content,
+      coverImage: formData.coverImage, // base64 or null
+    };
+
+    try {
+      const response = await api.post('/create-post', payload);
+
+      console.log("Post created:", response.data);
+
+      // Reset
+      setFormData({ title: "", category: "", status: "draft", coverImage: null });
+      setCoverPreview(null);
+      if (editorRef.current) editorRef.current.innerHTML = "";
+
+      onClose();
+      // Optional: toast / alert("Post saved!")
+    } catch (err) {
+      console.error("Create post error:", err);
+
+      let msg = "An unexpected error occurred";
+
+      if (err.response) {
+        const { status, data } = err.response;
+        if (status === 400) msg = data?.error || "Invalid data";
+        else if (status === 401) msg = "Please log in again";
+        else if (status === 413) msg = "Image too large";
+        else if (status >= 500) msg = data?.error || "Server error";
+        else msg = data?.error || `Error ${status}`;
+      } else if (err.request) {
+        msg = "Cannot reach the server. Check your connection.";
+      } else {
+        msg = err.message || "Request failed";
+      }
+
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white w-full max-w-4xl rounded-xl shadow-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden max-h-[95vh] flex flex-col">
         {/* Header */}
-        <div className="flex justify-between items-center p-5 border-b">
-          <h2 className="text-xl font-bold text-[#0A1A2F]">Create New Post</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-red-500 text-xl">✕</button>
+        <div className="flex items-center justify-between px-6 py-4 border-b bg-gray-50">
+          <h2 className="text-xl font-bold text-gray-800">Create New Post</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-red-600 text-2xl font-bold leading-none"
+          >
+            ×
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="flex-1 flex flex-col p-6 gap-5 overflow-y-auto">
           {/* Title */}
           <div>
-            <label className="block font-medium mb-1">Post Title</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Title <span className="text-red-500">*</span>
+            </label>
             <input
               type="text"
               name="title"
               value={formData.title}
               onChange={handleChange}
-              className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-cyan-500 outline-none"
+              maxLength={120}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none"
+              placeholder="Enter an engaging title..."
               required
             />
+            <div className="text-xs text-gray-500 mt-1 text-right">
+              {formData.title.length} / 120
+            </div>
           </div>
 
-          {/* Category & Status */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Category + Status */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label className="block font-medium mb-1">Category</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Category <span className="text-red-500">*</span>
+              </label>
               <select
                 name="category"
                 value={formData.category}
                 onChange={handleChange}
-                className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-cyan-500 outline-none"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none bg-white"
                 required
               >
                 <option value="">Select category</option>
@@ -156,98 +210,149 @@ export default function CreatePostModal({ isOpen, onClose }) {
             </div>
 
             <div>
-              <label className="block font-medium mb-1">Status</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
               <select
                 name="status"
                 value={formData.status}
                 onChange={handleChange}
-                className="w-full border rounded-lg px-4 py-2 focus:ring-2 focus:ring-cyan-500 outline-none"
+                className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none bg-white"
               >
-                <option value="draft">Draft</option>
-                <option value="published">Publish</option>
+                <option value="draft">Save as Draft</option>
+                <option value="published">Publish Now</option>
               </select>
             </div>
           </div>
-          {error && (
-            <p className="text-red-500 text-sm font-medium">{error}</p>
-            )}
 
-          {/* Editor */}
-          <div className="border rounded-lg">
-            {/* Toolbar */}
-            <div className="flex flex-wrap gap-1 p-2 border-b bg-gray-50">
-              <button type="button" onClick={() => format("bold")} className="editor-btn font-bold">B</button>
-              <button type="button" onClick={() => format("italic")} className="editor-btn italic">I</button>
-              <button type="button" onClick={() => format("underline")} className="editor-btn underline">U</button>
-
-              <button type="button" onClick={() => format("insertUnorderedList")} className="editor-btn">•≡</button>
-              <button type="button" onClick={() => format("insertOrderedList")} className="editor-btn">1≡</button>
-
-              <button type="button" onClick={() => format("justifyLeft")} className="editor-btn">⬅</button>
-              <button type="button" onClick={() => format("justifyCenter")} className="editor-btn">⬍</button>
-              <button type="button" onClick={() => format("justifyRight")} className="editor-btn">➡</button>
-
-              <button type="button" onClick={() => format("formatBlock", "h2")} className="editor-btn">H2</button>
-              <button type="button" onClick={() => format("formatBlock", "p")} className="editor-btn">P</button>
-
-              {/* Image Upload */}
+          {/* Cover Image */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cover Image (optional)</label>
+            <div className="flex items-center gap-4">
               <button
                 type="button"
-                onClick={() => fileInputRef.current.click()}
-                className="editor-btn"
+                onClick={() => coverInputRef.current?.click()}
+                className="px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg hover:bg-gray-200 transition"
               >
-                🖼
+                Choose cover image
+              </button>
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleCoverImageChange}
+                className="hidden"
+              />
+              {coverPreview && (
+                <div className="relative w-32 h-20 rounded overflow-hidden border">
+                  <img src={coverPreview} alt="Cover preview" className="object-cover w-full h-full" />
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Max 5MB • Recommended 1200×630</p>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          {/* Rich Text Editor */}
+          <div className="border border-gray-300 rounded-lg overflow-hidden flex flex-col">
+            {/* Toolbar */}
+            <div className="flex flex-wrap gap-1.5 p-2.5 bg-gray-50 border-b">
+              <button type="button" onClick={() => format("bold")} className="editor-btn font-bold px-3 py-1.5">B</button>
+              <button type="button" onClick={() => format("italic")} className="editor-btn italic px-3 py-1.5">I</button>
+              <button type="button" onClick={() => format("underline")} className="editor-btn underline px-3 py-1.5">U</button>
+
+              <span className="w-px h-6 bg-gray-300 mx-1 self-center" />
+
+              <button type="button" onClick={() => format("insertUnorderedList")} className="editor-btn px-3 py-1.5">• List</button>
+              <button type="button" onClick={() => format("insertOrderedList")} className="editor-btn px-3 py-1.5">1. List</button>
+
+              <span className="w-px h-6 bg-gray-300 mx-1 self-center" />
+
+              <button type="button" onClick={() => format("justifyLeft")} className="editor-btn px-3 py-1.5">Left</button>
+              <button type="button" onClick={() => format("justifyCenter")} className="editor-btn px-3 py-1.5">Center</button>
+              <button type="button" onClick={() => format("justifyRight")} className="editor-btn px-3 py-1.5">Right</button>
+
+              <span className="w-px h-6 bg-gray-300 mx-1 self-center" />
+
+              <button type="button" onClick={() => format("formatBlock", "h2")} className="editor-btn px-3 py-1.5">H2</button>
+              <button type="button" onClick={() => format("formatBlock", "p")} className="editor-btn px-3 py-1.5">P</button>
+
+              <span className="w-px h-6 bg-gray-300 mx-1 self-center" />
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="editor-btn px-3 py-1.5 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
+              >
+                Insert Image
               </button>
               <input
                 ref={fileInputRef}
                 type="file"
                 accept="image/*"
-                onChange={handleImageUpload}
+                onChange={handleContentImageUpload}
                 className="hidden"
               />
             </div>
 
-            {/* Content Area */}
+            {/* Editor Area */}
             <div
               ref={editorRef}
               contentEditable
-              className="min-h-[220px] p-4 outline-none"
-              placeholder="Write your blog content here..."
+              className="min-h-[280px] p-5 focus:outline-none prose prose-sm sm:prose lg:prose-lg max-w-none"
+              placeholder="Start writing your post here..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  // Optional: prevent form submit on Enter outside of editor
+                  // e.preventDefault(); // ← uncomment if needed
+                }
+              }}
             />
           </div>
 
-          {/* Actions */}
-          <div className="flex justify-end gap-4 pt-4 border-t">
-            <button type="button" onClick={onClose} className="px-6 py-2 rounded-lg border hover:bg-gray-100">
+          {/* Footer Actions */}
+          <div className="flex justify-end gap-4 pt-4 border-t mt-auto">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-6 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+              disabled={loading}
+            >
               Cancel
             </button>
             <button
               type="submit"
               disabled={loading}
-              className={`px-6 py-2 rounded-lg text-white ${
-                loading ? "bg-gray-400 cursor-not-allowed" : "bg-cyan-500 hover:bg-cyan-600"
+              className={`px-6 py-2.5 rounded-lg text-white font-medium transition ${
+                loading
+                  ? "bg-gray-400 cursor-not-allowed"
+                  : "bg-cyan-600 hover:bg-cyan-700"
               }`}
             >
-              {loading ? "Saving..." : "Save Post"}
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  </svg>
+                  Saving...
+                </span>
+              ) : formData.status === "published" ? "Publish" : "Save Draft"}
             </button>
           </div>
         </form>
-      </div>
 
-      {/* Toolbar styles */}
-      <style>{`
-        .editor-btn {
-          padding: 0.35rem 0.6rem;
-          border: 1px solid #ddd;
-          border-radius: 6px;
-          background: white;
-          font-size: 0.85rem;
-          cursor: pointer;
-        }
-        .editor-btn:hover {
-          background: #e0f7fa;
-        }
-      `}</style>
+        <style jsx>{`
+          .editor-btn {
+            @apply border border-gray-300 rounded-md bg-white hover:bg-gray-100 text-sm font-medium transition;
+          }
+          .prose :where(placeholder):not(:where([class~="not-prose"] *)) {
+            color: #9ca3af;
+          }
+        `}</style>
+      </div>
     </div>
   );
 }
