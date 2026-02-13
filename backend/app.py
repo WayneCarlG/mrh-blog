@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory, render_template
 from flask_cors import CORS
 from config import Config
 from flask_jwt_extended import (
@@ -10,8 +10,73 @@ from flask_jwt_extended import (
 from datetime import datetime
 from bson import ObjectId
 import base64
+import os
+import uuid
 from werkzeug.security import generate_password_hash, check_password_hash
 
+
+# Create uploads directory if it doesn't exist
+UPLOADS_DIR = os.path.join(os.path.dirname(__file__), 'uploads', 'images')
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+
+def serialize_post(post):
+    """Convert MongoDB document to JSON-serializable format"""
+    if post is None:
+        return None
+    
+    # Store original ObjectId before converting
+    original_id = post["_id"]
+    post["_id"] = str(post["_id"])
+    
+    # Convert datetime objects to ISO strings
+    if "createdAt" in post:
+        if post["createdAt"]:
+            post["createdAt"] = post["createdAt"].isoformat()
+        else:
+            # If createdAt is None, try to use _id's timestamp
+            post["createdAt"] = original_id.generation_time.isoformat()
+    else:
+        # If no createdAt, use _id's generation time
+        post["createdAt"] = original_id.generation_time.isoformat()
+    
+    if "updatedAt" in post and post["updatedAt"]:
+        post["updatedAt"] = post["updatedAt"].isoformat()
+    elif "updatedAt" not in post:
+        post["updatedAt"] = post["createdAt"]
+    
+    # Provide placeholder for missing coverImage
+    if "coverImage" not in post:
+        post["coverImage"] = "/placeholder.jpg"
+    
+    return post
+
+def save_base64_image(base64_string):
+    """Save base64 image to disk and return the relative path"""
+    if not base64_string:
+        return None
+    
+    try:
+        # Remove data URI prefix if present (e.g., "data:image/png;base64,")
+        if ',' in base64_string:
+            base64_string = base64_string.split(',')[1]
+        
+        # Decode base64
+        image_data = base64.b64decode(base64_string)
+        
+        # Generate unique filename
+        filename = f"{uuid.uuid4()}.png"
+        filepath = os.path.join(UPLOADS_DIR, filename)
+        
+        # Save to disk
+        with open(filepath, 'wb') as f:
+            f.write(image_data)
+        
+        # Return the relative URL path
+        return f"/uploads/images/{filename}"
+    
+    except Exception as e:
+        print(f"Error saving image: {e}")
+        return None
 
 app = Flask(
     __name__,
@@ -20,7 +85,14 @@ app = Flask(
     template_folder='../frontend/build'
 )
 
-...
+# Add a route to serve uploaded images
+@app.route('/uploads/images/<filename>')
+def serve_image(filename):
+    try:
+        return send_from_directory(UPLOADS_DIR, filename)
+    except Exception as e:
+        print(f"Error serving image {filename}: {e}")
+        return jsonify({"error": "Image not found"}), 404
 
 @app.errorhandler(404)
 def not_found(e):
@@ -258,22 +330,15 @@ def create_post():
     if not content:
         return jsonify({"error": "Content is required"}), 400
 
-    if status not in ("draft", "published"):
-        return jsonify({"error": "Invalid status value"}), 400
-
-    # ── 2. Optional: Validate & decode cover image ─────────────────────────
-    cover_image_bytes = None
+    # ── 2. Optional: Save cover image to disk ─────────────────────────
+    cover_image_path = None
     if cover_image:
         try:
-            # Handle data URI prefix if present (data:image/...;base64,)
-            if "," in cover_image:
-                cover_image = cover_image.split(",", 1)[1]
-
-            cover_image_bytes = base64.b64decode(cover_image)
-            if len(cover_image_bytes) > 5 * 1024 * 1024:  # 5 MB limit
-                return jsonify({"error": "Cover image too large (max 5MB)"}), 413
-
+            cover_image_path = save_base64_image(cover_image)
+            if not cover_image_path:
+                return jsonify({"error": "Failed to save cover image"}), 400
         except Exception as e:
+            print(f"Error saving cover image: {e}")
             return jsonify({"error": f"Invalid cover image format: {str(e)}"}), 400
 
     # ── 3. Prepare post document ───────────────────────────────────────────
@@ -282,8 +347,7 @@ def create_post():
         "category": category,
         "status": status,
         "content": content,
-        "coverImage": cover_image,       # keep original base64 (or store bytes elsewhere)
-        # "coverImageBinary": cover_image_bytes,  # ← optional if you want to store binary
+        "coverImage": cover_image_path,  # Store the path, not base64
         "author": {
             "id": current_user["id"],
             "name": current_user.get("name", "Unknown"),
@@ -315,11 +379,19 @@ def create_post():
 @app.route("/api/posts", methods=["GET"])
 def get_posts():
     try:
-        posts = list(Config.DB.posts.find().sort("_id", -1))
-        for post in posts:
-            if post["status"] == "published":
-                post["_id"] = str(post["_id"])
-
+        # Get query parameters
+        featured = request.args.get("featured", "false").lower() == "true"
+        status = request.args.get("status")
+        
+        # Build query filter
+        query_filter = {}
+        if featured:
+            query_filter["featured"] = True
+        if status:
+            query_filter["status"] = status
+        
+        posts = list(Config.DB.posts.find(query_filter).sort("_id", -1))
+        posts = [serialize_post(post) for post in posts]
         return jsonify(posts), 200
     except Exception as e:
         print("Error fetching posts:", e)
@@ -334,7 +406,7 @@ def delete_post(post_id):
             if not post:
                 return jsonify({"error": "Post not found"}), 404
 
-            post["_id"] = str(post["_id"])
+            post = serialize_post(post)
             return jsonify(post), 200
         except Exception as e:
             print("Error fetching post:", e)
@@ -358,6 +430,69 @@ def delete_post(post_id):
         except Exception as e:
             print("Error deleting post:", e)
             return jsonify({"error": "Failed to delete post"}), 500
+
+@app.route("/rss.xml")
+def rss_feed():
+    try:
+        posts = list(Config.DB.posts.find({"status": "published"}).sort("createdAt", -1).limit(20))
+        rss_items = ""
+        for post in posts:
+            post_id = str(post["_id"])
+            title = post["title"]
+            link = f"http://localhost:5000/posts/{post_id}"
+            description = post["content"][:200] + "..."  # Simple excerpt
+            pub_date = post["createdAt"].strftime("%a, %d %b %Y %H:%M:%S GMT")
+            rss_items += f"""
+                <item>
+                    <title>{title}</title>
+                    <link>{link}</link>
+                    <description>{description}</description>
+                    <pubDate>{pub_date}</pubDate>
+                </item>
+            """
+
+        rss_feed = f"""<?xml version="1.0" encoding="UTF-8" ?>
+            <rss version="2.0">
+                <channel>
+                    <title>Religion Uncensored</title>
+                    <link>http://localhost:5000/</link>
+                    <description>Latest posts from my blog</description>
+                    {rss_items}
+                </channel>
+            </rss>"""
+
+        return app.response_class(rss_feed, mimetype='application/rss+xml')
+    except Exception as e:
+        print("Error generating RSS feed:", e)
+        return jsonify({"error": "Failed to generate RSS feed"}), 500
+
+@app.route("/api/posts/<post_id>", methods=["GET"])
+def get_single_post(post_id):
+    try:
+        post = Config.DB.posts.find_one({"_id": ObjectId(post_id)})
+
+        if not post:
+            return jsonify({"error": "Post not found"}), 404
+
+        # Optional: Prevent viewing drafts
+        if post.get("status") != "published":
+            return jsonify({"error": "Post not available"}), 403
+
+        return jsonify({
+            "id": str(post["_id"]),
+            "title": post["title"],
+            "category": post.get("category"),
+            "status": post.get("status"),
+            "content": post["content"],
+            "coverImage": post.get("coverImage"),
+            "author": post.get("author"),
+            "createdAt": post.get("createdAt").isoformat() if post.get("createdAt") else None,
+            "updatedAt": post.get("updatedAt").isoformat() if post.get("updatedAt") else None,
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -5,6 +5,7 @@ import HomePage from './components/layout/HomePage.jsx';
 import AdminDashboard from './components/layout/AdminDash.jsx';
 import { Login } from './components/layout/Login.jsx';
 import { Signup } from './components/layout/Signup.jsx';
+import SinglePost from './components/layout/SinglePost.jsx';
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route path="/dashboard" element={<AdminDashboard />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/posts/:id" element={<SinglePost />} />
         </Routes>
       </Router>
     </div>
