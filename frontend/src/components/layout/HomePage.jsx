@@ -12,7 +12,7 @@ export default function HomePage() {
 
   async function fetchFeaturedPosts() {
     try {
-      const response = await api.get("/posts?featured=true");
+      const response = await api.get("/posts?status=published");
       setFeaturedPosts(response.data);
     } catch (error) {
       console.error("Error fetching featured posts:", error);
@@ -68,12 +68,17 @@ export default function HomePage() {
                 className="bg-white border border-gray-200 rounded-xl shadow hover:shadow-lg transition"
               >
                 {/* Cover image */}
-                <div
-                  className="h-48 rounded-t-xl bg-cover bg-center"
-                  style={{
-                    backgroundImage: `url(${post.coverImage || "/placeholder.jpg"})`,
-                  }}
-                />
+                {post.coverImage ? (
+                  <img
+                    src={post.coverImage}
+                    alt={post.title}
+                    className="w-full h-48 object-cover rounded-t-xl"
+                  />
+                ) : (
+                  <div className="w-full h-48 bg-gray-300 rounded-t-xl flex items-center justify-center">
+                    <span className="text-gray-500">No image</span>
+                  </div>
+                )}
 
                 <div className="p-6">
                   <span className="inline-block text-sm font-semibold text-red-500 mb-2">
@@ -89,7 +94,7 @@ export default function HomePage() {
                   </p>
 
                   <Link
-                    to={`/blogs/${post._id}`}
+                    to={`/posts/${post._id}`}
                     className="text-cyan-600 font-semibold hover:underline"
                   >
                     Read More →
